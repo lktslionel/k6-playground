@@ -1,76 +1,123 @@
-<div align="center">
-  
-  ![banner](docs/ts-js-k6.png)
-
-# Template to use TypeScript with k6
-
-![.github/workflows/push.yml](https://github.com/k6io/template-typescript/workflows/.github/workflows/push.yml/badge.svg?branch=master)
-
-</div>
-
-This repository provides a scaffolding project to start using TypeScript in your k6 scripts.
-
-## Rationale
-
-While JavaScript is great for a myriad of reasons, one area where it fall short is type safety and developer ergonomics. It's perfectly possible to write JavaScript code that will look OK and behave OK until a certain condition forces the executor into a faulty branch.
-
-While it, of course, still is possible to shoot yourself in the foot with TypeScript as well, it's significantly harder. Without adding much overhead, TypeScript will:
-
-- Improve the ability to safely refactor your code.
-- Improve readability and maintainability.
-- Allow you to drop a lot of the defensive code previously needed to make sure consumers are calling functions properly.
+# k6 Playground
 
 
-## Prerequisites
-
-- [k6](https://k6.io/docs/getting-started/installation)
-- [NodeJS](https://nodejs.org/en/download/)
-- [Yarn](https://yarnpkg.com/getting-started/install) (optional)
-
-## Installation
-
-**Creating a project from the `template-typescript` template**
-
-To generate a TypeScript project that includes the dependencies and initial configuration, navigate to the [template-typescript](https://github.com/k6io/template-typescript) page and click **Use this template**.
-
-  ![](docs/use-this-template-button.png)
+- [1 Concepts](#1-concepts)
+  - [1.1 Virtual users (VUs)](#11-virtual-users-vus)
+  - [1.2 Stages](#12-stages)
+  - [1.3 Metrics](#13-metrics)
+  - [1.4 Checks & Thresholds](#14-checks--thresholds)
+    - [Examples](#examples)
+- [2 Test lifecycle](#2-test-lifecycle)
+- [5 Resources](#5-resources)
 
 
-**Install dependencies**
+## 1 Concepts
 
-Clone the generated repository on your local machine, move to the project root folder and install the dependencies defined in [`package.json`](./package.json)
+### 1.1 Virtual users (VUs)
 
-```bash
-$ yarn install
+A **virtual user** is an entity that executes a test, and makes requests.
+It simulate a actual user session.
+
+They run concurrently, nad keep repeating the test until the test is over.
+
+```
+VUs = (numHourlySessions * avgSessionDurationInSec) / 3600
 ```
 
-## Running the test
+Things we need to simulate are:
 
-To run a test written in TypeScript, we first have to transpile the TypeScript code into JavaScript and bundle the project
+* Regulat traffic
+* Busiest/peak hour
+* Stress test your system
 
-```bash
-$ yarn webpack
+
+### 1.2 Stages 
+
+```js
+
+stages: [
+  { duration: "1m", target: 2000 },
+  { duration: "9m", target: 2000 },
+  { duration: "3m", target: 10000 },
+  { duration: "7m", target: 10000 },
+  { duration: "10m", target: 0 },
+]
 ```
 
-This command creates the final test files to the `./dist` folder.
+* Start from `0` to `2000` users during `1m`  
+* Then stay at `2000` users for about `9m`  
+* Ramp up to `10000` users for `3m`  
+* and stay at the same user traffic for `7m`  
+* go down to `0` during `10m`  
 
-Once that is done, we can run our script the same way we usually do, for instance:
 
-```bash
-$ k6 run dist/get-200-status-test.js
+### 1.3 Metrics
+
+You can use custom metrics in your test. 
+
+```js 
+import { Counter } from "k6/metrics"
+
+let errorsCounter = new Counter("Errors")
+//...
+errorsCounter.add(1)
 ```
 
-## Writing own tests
+4 types of custom metrics:
+* Counter: Cumulative sum of values
+* Gauge: Store the last value added
+* Rate: % of non-zero added values 
+* Trend: Calculate statistics on the added values (*min, max average, percentiles (p90, p95)*)
 
-House rules for writing tests:
-- The test code is located in `src` folder
-- The entry points for the tests need to have "_test_" word in the name to distinguish them from auxiliary files. You can change the entry [here](./webpack.config.js#L8). 
-- If static files are required then add them to `./assets` folder. Its content gets copied to the destination folder (`dist`) along with compiled scripts.
 
-### Transpiling and Bundling
+### 1.4 Checks & Thresholds
 
-By default, k6 can only run ES5.1 JavaScript code. To use TypeScript, we have to set up a bundler that converts TypeScript to JavaScript code. 
+**Checks**: doesn't halt the execution of the test. It is like assertions
+**Thresholds**: A global pass/fail criteria that you can configure k6 to use
 
-This project uses `Babel` and `Webpack` to bundle the different files - using the configuration of the [`webpack.config.js`](./webpack.config.js) file.
 
-If you want to learn more, check out [Bundling node modules in k6](https://k6.io/docs/using-k6/modules#bundling-node-modules).
+#### Examples
+
+```js
+//
+// Check
+//
+check(res, {
+  "check 1": (r) => r.status == 200,
+  "check 2": (r) => r.body.length == 1117,
+})
+
+//
+// Thresholds
+//
+
+export let options {
+  threshold: {
+    "errors": ["rate < 0.1 "], // Custom error Rate using the `Rate` metric from `k6/metrics` 
+  }
+}
+```
+
+## 2 Test lifecycle
+
+```
+1. init     (imports + options)
+    |
+    v
+2. Setup    (export function setup() {...})
+    |
+    v<-----<
+    |      |  // looping for the duration of the test
+3. VU Code | (export default function(data) {...})
+    |      |
+    |-->--->
+    v
+4. Teardown (export function teardown(data) {...})
+```
+See [2]
+
+
+## 5 Resources
+
+1. https://test.k6.io/
+2. https://k6.io/docs/using-k6/test-life-cycle/

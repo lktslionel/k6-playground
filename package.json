@@ -23,5 +23,8 @@
   },
   "scripts": {
     "start": "webpack"
+  },
+  "dependencies": {
+    "env-var": "^7.1.1"
   }
 }
